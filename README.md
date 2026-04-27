@@ -1,87 +1,75 @@
-# Sparkify Airflow Data Pipeline
+# Data Pipelines with Airflow
 
-## Overview
+Welcome to the Data Pipelines with Airflow project! This endeavor will provide you with a solid understanding of Apache Airflow's core concepts. Your task involves creating custom operators to execute essential functions like staging data, populating a data warehouse, and validating data through the pipeline.
 
-This project automates the ETL pipeline for Sparkify's music streaming data warehouse using Apache Airflow. Raw JSON logs (user activity) and JSON metadata (song catalog) are loaded from S3 into Amazon Redshift, transformed into a star schema, and validated with data quality checks.
+To begin, we've equipped you with a project template that streamlines imports and includes four unimplemented operators. These operators need your attention to turn them into functional components of a data pipeline. The template also outlines tasks that must be interconnected for a coherent and logical data flow.
 
-## Architecture
+A helper class containing all necessary SQL transformations is at your disposal. While you won't have to write the ETL processes, your responsibility lies in executing them using your custom operators.
 
-```
-S3 (JSON logs + song data)
-        │
-        ▼
-┌─────────────────────┐
-│  Staging Tables      │  staging_events, staging_songs
-└────────┬────────────┘
-         ▼
-┌─────────────────────┐
-│  Fact Table          │  songplays
-└────────┬────────────┘
-         ▼
-┌─────────────────────┐
-│  Dimension Tables    │  users, songs, artists, time
-└────────┬────────────┘
-         ▼
-┌─────────────────────┐
-│  Quality Checks      │  NULL checks on primary keys
-└─────────────────────┘
+## Initiating the Airflow Web Server
+Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed before proceeding.
+
+If you wish to run Airflow on a port number different from the default, you can create a `.env` file in the repository's home directory and configure the `AIRFLOW_PORT` environment variable. For instance, if you prefer using port number 8027, the content of the `.env` will be
+
+```bash
+AIRFLOW_PORT=8027
 ```
 
-## DAG Task Flow
+To bring up the entire app stack up, we use [docker-compose](https://docs.docker.com/engine/reference/commandline/compose_up/) as shown below
 
+```bash
+docker-compose up -d
 ```
-Begin_execution
-  └─▶ Create_tables
-        ├─▶ Stage_events
-        └─▶ Stage_songs
-              └─▶ Load_songplays_fact_table
-                    ├─▶ Load_user_dim_table
-                    ├─▶ Load_song_dim_table
-                    ├─▶ Load_artist_dim_table
-                    └─▶ Load_time_dim_table
-                          └─▶ Run_data_quality_checks
-                                └─▶ End_execution
-```
+Visit http://localhost:8080 once all containers are up and running.
 
-## Project Structure
+## Configuring Connections in the Airflow Web Server UI
+![Airflow Web Server UI. Credentials: `airflow`/`airflow`.](assets/login.png)
 
-```
-sparkify-airflow/
-├── dags/
-│   └── sparkify_etl_dag.py        # Main DAG definition
-└── plugins/
-    ├── operators/
-    │   ├── stage_redshift.py       # S3 → Redshift COPY
-    │   ├── load_fact.py            # Fact table INSERT
-    │   ├── load_dimension.py       # Dimension table INSERT
-    │   └── data_quality.py         # SQL-based quality checks
-    └── helpers/
-        └── sql_queries.py          # All SQL statements
-```
+On the Airflow web server UI, use `airflow` for both username and password.
+* Post-login, navigate to **Admin > Connections** to add required connections - specifically, `aws_credentials` and `redshift`.
+* Don't forget to start your Redshift cluster via the AWS console.
+* After completing these steps, run your DAG to ensure all tasks are successfully executed.
 
-## Custom Operators
+## Getting Started with the Project
+1. The project template package comprises three key components:
+   * The **DAG template** includes imports and task templates but lacks task dependencies.
+   * The **operators** folder with operator templates.
+   * A **helper class** for SQL transformations.
 
-| Operator | Purpose |
-|---|---|
-| **StageToRedshiftOperator** | Uses Redshift COPY to load JSON from S3 into staging tables. Supports templated S3 keys for backfills. |
-| **LoadFactOperator** | Runs INSERT INTO … SELECT to populate the songplays fact table. Supports append or truncate-insert. |
-| **LoadDimensionOperator** | Populates dimension tables. Default is truncate-insert (full refresh). |
-| **DataQualityOperator** | Runs a list of SQL checks and fails the task if any result doesn't match the expected value. |
+1. With these template files, you should see the new DAG in the Airflow UI, with a graph view resembling the screenshot below:
+![Project DAG in the Airflow UI](assets/final_project_dag_graph1.png)
+You should be able to execute the DAG successfully, but if you check the logs, you will see only `operator not implemented` messages.
 
-## Airflow Connections Required
+## DAG Configuration
+In the DAG, add `default parameters` based on these guidelines:
+* No dependencies on past runs.
+* Tasks are retried three times on failure.
+* Retries occur every five minutes.
+* Catchup is turned off.
+* No email on retry.
 
-Create these in the Airflow UI under **Admin → Connections**:
+Additionally, configure task dependencies to match the flow depicted in the image below:
+![Working DAG with correct task dependencies](assets/final_project_dag_graph2.png)
 
-1. **`redshift`** — Postgres connection to your Redshift cluster (host, schema, login, password, port 5439).
-2. **`aws_credentials`** — Amazon Web Services connection with your Access Key ID and Secret.
+## Developing Operators
+To complete the project, build four operators for staging data, transforming data, and performing data quality checks. While you can reuse code from Project 2, leverage Airflow's built-in functionalities like connections and hooks whenever possible to let Airflow handle the heavy lifting.
 
-## How to Run
+### Stage Operator
+Load any JSON-formatted files from S3 to Amazon Redshift using the stage operator. The operator should create and run a SQL COPY statement based on provided parameters, distinguishing between JSON files. It should also support loading timestamped files from S3 based on execution time for backfills.
 
-1. Copy `dags/` and `plugins/` into your Airflow home directory.
-2. Set up the two connections listed above.
-3. Enable the `sparkify_etl` DAG in the Airflow UI.
-4. The DAG runs hourly by default. Trigger a manual run or let the scheduler pick it up.
+### Fact and Dimension Operators
+Utilize the provided SQL helper class for data transformations. These operators take a SQL statement, target database, and optional target table as input. For dimension loads, implement the truncate-insert pattern, allowing for switching between insert modes. Fact tables should support append-only functionality.
 
-## Backfills
+### Data Quality Operator
+Create the data quality operator to run checks on the data using SQL-based test cases and expected results. The operator should raise an exception and initiate task retry and eventual failure if test results don't match expectations.
 
-The S3 key in `StageToRedshiftOperator` supports Jinja templating. To partition logs by date, change the `s3_key` to something like `log_data/{{execution_date.year}}/{{execution_date.month}}` and set `catchup=True` in the DAG to backfill historical data automatically.
+## Reviewing Starter Code
+Before diving into development, familiarize yourself with the following files:
+- [plugins/operators/data_quality.py](plugins/operators/data_quality.py)
+- [plugins/operators/load_fact.py](plugins/operators/load_fact.py)
+- [plugins/operators/load_dimension.py](plugins/operators/load_dimension.py)
+- [plugins/operators/stage_redshift.py](plugins/operators/stage_redshift.py)
+- [plugins/helpers/sql_queries.py](plugins/helpers/sql_queries.py)
+- [dags/final_project.py](dags/final_project.py)
+
+Now you're ready to embark on this exciting journey into the world of Data Pipelines with Airflow!
